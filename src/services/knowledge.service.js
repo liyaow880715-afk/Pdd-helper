@@ -184,7 +184,7 @@ function buildKeywordWhere(keywords, fields) {
   const params = [];
   for (const kw of keywords) {
     if (!kw) continue;
-    const fieldClauses = fields.map(() => 'LIKE ?').join(' OR ');
+    const fieldClauses = fields.map(f => `${f} LIKE ?`).join(' OR ');
     clauses.push(`(${fieldClauses})`);
     for (let i = 0; i < fields.length; i++) params.push(`%${kw}%`);
   }
