@@ -155,7 +155,10 @@ async function optimizeTitle(shopId, { title, keywords = '', catName = '', catRu
 5. 符合拼多多搜索和合规规范，不要特殊符号、不要虚假宣传。
 6. 直接返回优化后的标题，不要解释、不要引号。`;
 
-  const optimized = await ai.callApi(model, [{ role: 'user', content: prompt }], 200, { timeout: 15000 });
+  const optimized = await ai.callApi(model, [
+    { role: 'system', content: '你是拼多多商品标题优化专家。必须严格按照用户给出的公式改写标题，返回的标题必须与原标题不同，禁止原样返回。' },
+    { role: 'user', content: prompt }
+  ], 200, { timeout: 15000, extraBody: { temperature: 0.8 } });
   const clean = (optimized || '').replace(/["'"]/g, '').trim();
   if (!clean) return title.trim();
   if (clean.length > 60) return clean.slice(0, 60);
