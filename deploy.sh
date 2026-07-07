@@ -8,7 +8,8 @@ cp -f .env .env.bak.deploy 2>/dev/null || true
 cp -f data/pdd.db data/pdd.db.bak.deploy 2>/dev/null || true
 
 echo "[deploy] 拉取最新代码..."
-git pull origin master
+git fetch origin master
+git reset --hard origin/master
 
 echo "[deploy] 安装后端依赖..."
 npm ci
