@@ -189,6 +189,19 @@
                 关闭后，未命中关键词/话术库的消息将转人工处理，不调用 AI
               </span>
             </el-form-item>
+            <el-form-item label="客服默认 Prompt">
+              <el-input
+                v-model="form.ai_cs_system_prompt"
+                type="textarea"
+                :rows="6"
+                placeholder="你是拼多多店铺专业客服，回复简洁友好，不超过 150 字。店铺规则：下单后 48 小时内发货，7 天无理由退换，物流使用圆通快递。"
+                maxlength="2000"
+                show-word-limit
+              />
+              <span style="margin-left:8px;color:#8c8c8c;font-size:13px">
+                留空将使用默认 Prompt；保存后立即对新的客服消息生效
+              </span>
+            </el-form-item>
             <el-form-item label="每日调用上限">
               <el-input-number
                 v-model="form.deepseek_daily_limit"
@@ -295,7 +308,8 @@ const form = ref({
   ai_chat_model: '',
   ai_reasoner_model: '',
   ai_user_agent: 'KimiCLI/1.3',
-  ai_auto_reply: true
+  ai_auto_reply: true,
+  ai_cs_system_prompt: ''
 })
 
 const aiUsagePercent = computed(() => {
@@ -336,7 +350,8 @@ async function fetchConfig() {
       ai_chat_model: data.ai_chat_model || '',
       ai_reasoner_model: data.ai_reasoner_model || '',
       ai_user_agent: data.ai_user_agent || 'KimiCLI/1.3',
-      ai_auto_reply: data.ai_auto_reply !== false
+      ai_auto_reply: data.ai_auto_reply !== false,
+      ai_cs_system_prompt: data.ai_cs_system_prompt || ''
     })
     aiStats.value = data.ai_stats || {}
     aiModels.value = data.ai_available_models || []
@@ -349,7 +364,7 @@ const saveKeys = {
   notify: ['notify_channel', 'feishu_webhook_url', 'wecom_webhook_url', 'wecom_aibot_enabled', 'wecom_aibot_bot_id', 'wecom_aibot_secret', 'wecom_aibot_default_chat_id', 'wecom_aibot_default_shop_id'],
   stock: ['stock_warning_threshold'],
   job: ['job_order_enabled', 'job_stock_enabled', 'job_report_enabled', 'job_refund_enabled', 'job_order_cron', 'job_stock_cron', 'job_report_cron', 'job_refund_cron'],
-  ai: ['deepseek_daily_limit', 'ai_base_url', 'ai_api_key', 'ai_chat_model', 'ai_reasoner_model', 'ai_user_agent', 'ai_auto_reply']
+  ai: ['deepseek_daily_limit', 'ai_base_url', 'ai_api_key', 'ai_chat_model', 'ai_reasoner_model', 'ai_user_agent', 'ai_auto_reply', 'ai_cs_system_prompt']
 }
 
 function isValidCron(expr) {

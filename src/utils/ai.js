@@ -25,7 +25,13 @@ function dbConfig(key, fallback = null) {
   }
 }
 
+const DEFAULT_CS_PROMPT = [
+  '你是拼多多店铺专业客服，回复简洁友好，不超过 150 字。',
+  '店铺规则：下单后 48 小时内发货，7 天无理由退换，物流使用圆通快递。',
+].join('');
+
 function getAiSettings() {
+  const rawCsPrompt = dbConfig('ai_cs_system_prompt', DEFAULT_CS_PROMPT);
   return {
     baseURL: dbConfig('ai_base_url', config.ai.baseURL),
     apiKey: dbConfig('ai_api_key', config.ai.apiKey),
@@ -34,6 +40,7 @@ function getAiSettings() {
     userAgent: dbConfig('ai_user_agent', 'KimiCLI/1.3'),
     dailyLimit: parseInt(dbConfig('deepseek_daily_limit', String(config.ai.dailyLimit)), 10),
     autoReply: dbConfig('ai_auto_reply', 'true') !== 'false',
+    csSystemPrompt: rawCsPrompt && rawCsPrompt.trim() ? rawCsPrompt : DEFAULT_CS_PROMPT,
   };
 }
 
@@ -119,15 +126,14 @@ async function callApi(model, messages, maxTokens = 500, options = {}) {
 
 async function chat(userMessage, context = {}, options = {}) {
   const { faq = '', orderInfo = '', knowledgeContext = '' } = context;
+  const settings = getAiSettings();
   const systemPrompt = [
-    '你是拼多多店铺专业客服，回复简洁友好，不超过 150 字。',
-    '店铺规则：下单后 48 小时内发货，7 天无理由退换，物流使用圆通快递。',
+    settings.csSystemPrompt,
     faq ? `\n常见问题：\n${faq}` : '',
     knowledgeContext ? `\n知识库参考（优先使用以下信息回复）：\n${knowledgeContext}` : '',
     orderInfo ? `\n买家订单信息：\n${orderInfo}` : '',
   ].filter(Boolean).join('');
 
-  const settings = getAiSettings();
   const model = options.model || settings.chatModel;
 
   return callApi(model, [

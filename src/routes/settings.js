@@ -38,7 +38,8 @@ const ALLOWED_KEYS = [
   'ai_chat_model',
   'ai_reasoner_model',
   'ai_user_agent',
-  'ai_auto_reply'
+  'ai_auto_reply',
+  'ai_cs_system_prompt'
 ];
 
 function getConfig(key) {
