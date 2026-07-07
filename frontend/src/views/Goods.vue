@@ -143,7 +143,7 @@
         <el-form-item label="商品标题">
           <div style="display:flex;gap:8px;width:100%">
             <el-input v-model="editForm.goodsName" maxlength="60" show-word-limit style="flex:1" />
-            <el-button :loading="optimizingTitle" @click="handleOptimizeTitle(editForm.value, '')">AI 优化标题</el-button>
+            <el-button :loading="optimizingTitle" @click="handleOptimizeTitle(editForm, '')">AI 优化标题</el-button>
           </div>
         </el-form-item>
         <el-form-item label="商品描述">
@@ -237,7 +237,7 @@
         <el-form-item label="商品标题" required>
           <div style="display:flex;gap:8px;width:100%">
             <el-input v-model="publishForm.goodsName" placeholder="最多 30 个汉字" maxlength="60" show-word-limit style="flex:1" />
-            <el-button :loading="optimizingTitle" @click="handleOptimizeTitle(publishForm.value, '')">
+            <el-button :loading="optimizingTitle" @click="handleOptimizeTitle(publishForm, '')">
               AI 优化标题
             </el-button>
           </div>
@@ -700,17 +700,19 @@ function initProperties() {
 // ─── AI 优化标题 ─────────────────────────────────────────────────────────────
 async function handleOptimizeTitle(formRef, catName) {
   if (!shopStore.currentId) return ElMessage.warning('请先选择店铺')
-  const title = formRef.goodsName?.trim()
+  const form = formRef.value
+  if (!form) return ElMessage.warning('表单未初始化')
+  const title = form.goodsName?.trim()
   if (!title) return ElMessage.warning('请先输入商品标题')
   optimizingTitle.value = true
   try {
     const res = await goodsApi.optimizeTitle(shopStore.currentId, {
       title,
-      keywords: formRef.goodsDesc?.trim() || '',
+      keywords: form.goodsDesc?.trim() || '',
       catName: catName || '',
       catRule: catRule.value,
     })
-    formRef.goodsName = res.title
+    form.goodsName = res.title
     ElMessage.success('标题已优化')
   } catch (err) {
     ElMessage.error(err.message || '标题优化失败')
