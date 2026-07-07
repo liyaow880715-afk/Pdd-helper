@@ -303,7 +303,7 @@
           </el-upload>
         </el-form-item>
 
-        <el-form-item label="详情图">
+        <el-form-item label="详情图" required>
           <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px">
             <div v-for="(url, idx) in publishForm.detailGallery" :key="idx" style="position:relative">
               <el-image :src="url" fit="cover" style="width:80px;height:80px;border-radius:4px;border:1px solid #e4e7ed" />
@@ -753,6 +753,9 @@ async function onSpuChange(spuId) {
 
 // ─── 多维 SKU 规格组 ─────────────────────────────────────────────────────────
 function addSpecGroup() {
+  if (skuSpecs.value.length >= 4) {
+    return ElMessage.warning('规格组最多 4 个')
+  }
   skuSpecs.value.push({ specName: '', parentSpecId: 0, values: [''] })
 }
 function removeSpecGroup(idx) {
@@ -760,6 +763,10 @@ function removeSpecGroup(idx) {
   regenerateSkus()
 }
 function addSpecValue(groupIdx) {
+  const total = skuSpecs.value.reduce((sum, g) => sum + g.values.filter(v => v.trim()).length, 0)
+  if (total >= 44) {
+    return ElMessage.warning('所有规格值总数不能超过 44')
+  }
   skuSpecs.value[groupIdx].values.push('')
 }
 function removeSpecValue(groupIdx, valIdx) {
@@ -821,6 +828,31 @@ function skuRowLabel(row) {
   return row.specName || '默认'
 }
 
+/** 标题字符数：中文按 2 个字符计算 */
+function titleCharCount(title = '') {
+  let count = 0
+  for (const ch of title) {
+    if (/[\u4e00-\u9fa5\uff00-\uffef]/.test(ch)) count += 2
+    else count += 1
+  }
+  return count
+}
+
+/** 根据类目服务规则校验服务承诺 */
+function validateServiceRule() {
+  const r = serviceRule.value || {}
+  const cfg = serviceConfig.value
+  if (r.refundable_rule === 2 && !cfg.isRefundable) return '该类目下必须选择 7 天无理由退货'
+  if (r.refundable_rule === 0 && cfg.isRefundable) return '该类目下不能选择 7 天无理由退货'
+  if (r.folt_rule === 2 && !cfg.isFolt) return '该类目下假一罚十必选'
+  if (r.folt_rule === 0 && cfg.isFolt) return '该类目下假一罚十必须选否'
+  if (r.second_hand_rule === 2 && !cfg.secondHand) return '该类目下二手商品必须选择“是”'
+  if (r.second_hand_rule === 0 && cfg.secondHand) return '该类目下二手商品必须选择“否”'
+  if (r.bad_claim_rule === 2 && !cfg.badFruitClaim) return '该类目下坏果包赔必选'
+  if (r.lack_of_weight_claim_rule === 2 && !cfg.lackOfWeightClaim) return '该类目下缺重包退必选'
+  return ''
+}
+
 function buildGoodsProperties() {
   const result = []
   for (const p of visibleProperties.value) {
@@ -844,20 +876,57 @@ async function handlePublish() {
   if (!shopStore.currentId) return ElMessage.warning('请先选择店铺')
   const form = publishForm.value
   if (!form.catPath?.length) return ElMessage.warning('请选择商品类目')
-  if (!form.goodsName.trim()) return ElMessage.warning('请填写商品标题')
+  const title = form.goodsName.trim()
+  if (!title) return ElMessage.warning('请填写商品标题')
+  if (titleCharCount(title) > 60) {
+    return ElMessage.warning('商品标题最多 30 个汉字（60 个字符），中文按 2 个字符计算')
+  }
+  if (/旗舰店|专卖店/.test(title) && !/旗舰|专卖/.test(shopStore.current?.name || '')) {
+    return ElMessage.warning('非旗舰店/专卖店请勿在标题中使用“旗舰店/专卖店”字样')
+  }
   if (!form.carouselGallery.length || !form.carouselGallery.some(u => u.trim())) {
     return ElMessage.warning('请至少上传一张轮播图')
   }
-  if (!form.costTemplateId) return ElMessage.warning('请填写运费模板 ID')
-  if (!form.skus.length || form.skus.some(s => s.price <= 0 || s.multiPrice <= 0)) {
-    return ElMessage.warning('请填写完整的 SKU 价格和库存')
+  if (!form.detailGallery.some(u => u.trim())) {
+    return ElMessage.warning('请至少上传一张详情图')
   }
+  if (!form.costTemplateId) return ElMessage.warning('请选择运费模板')
+  if (!form.skus.length) return ElMessage.warning('请至少添加一条 SKU')
+
+  // 规格组与规格值数量限制
+  const activeGroups = skuSpecs.value.filter(g => g.specName.trim())
+  if (activeGroups.length > 4) return ElMessage.warning('规格组最多 4 个')
+  const valueTotal = activeGroups.reduce((sum, g) => sum + g.values.filter(v => v.trim()).length, 0)
+  if (valueTotal > 44) return ElMessage.warning('所有规格值总数不能超过 44')
+
+  // SKU 价格 / 库存 / 上架校验
+  const prices = form.skus.map(s => +s.price).filter(p => p > 0)
+  const multiPrices = form.skus.map(s => +s.multiPrice).filter(p => p > 0)
+  if (prices.length !== form.skus.length || multiPrices.length !== form.skus.length) {
+    return ElMessage.warning('所有 SKU 必须填写单买价和拼单价')
+  }
+  if (!form.skus.some(s => s.isOnSale !== false)) {
+    return ElMessage.warning('至少要有一个 SKU 上架')
+  }
+  const maxSinglePrice = Math.max(...prices)
+  if (form.marketPrice <= maxSinglePrice) {
+    return ElMessage.warning(`参考价必须高于所有 SKU 中的最大单买价（当前最高 ¥${maxSinglePrice.toFixed(2)}）`)
+  }
+  for (const sku of form.skus) {
+    if (sku.price - sku.multiPrice < 1) {
+      return ElMessage.warning(`SKU「${skuRowLabel(sku)}」单买价至少比拼单价高 1 元`)
+    }
+  }
+
   const requiredProps = visibleProperties.value.filter(p => p.required)
   for (const p of requiredProps) {
     const val = propertyValues.value[p.ref_pid]
     const empty = Array.isArray(val) ? !val.length : !val || (typeof val === 'object' ? !(val.vid || val.value) : !String(val).trim())
     if (empty) return ElMessage.warning(`请填写属性：${p.name}`)
   }
+
+  const serviceErr = validateServiceRule()
+  if (serviceErr) return ElMessage.warning(serviceErr)
 
   publishing.value = true
   try {
@@ -957,6 +1026,31 @@ async function openEdit(row) {
 
 async function handleSave() {
   if (!editInfo.value) return
+  const edit = editForm.value
+  const editTitle = (edit.goodsName || '').trim()
+  if (!editTitle) return ElMessage.warning('请填写商品标题')
+  if (titleCharCount(editTitle) > 60) {
+    return ElMessage.warning('商品标题最多 30 个汉字（60 个字符），中文按 2 个字符计算')
+  }
+  if (/旗舰店|专卖店/.test(editTitle) && !/旗舰|专卖/.test(shopStore.current?.name || '')) {
+    return ElMessage.warning('非旗舰店/专卖店请勿在标题中使用“旗舰店/专卖店”字样')
+  }
+  if (!edit.skus.length) return ElMessage.warning('请至少保留一条 SKU')
+  const prices = edit.skus.map(s => +s.price).filter(p => p > 0)
+  const multiPrices = edit.skus.map(s => +s.multiPrice).filter(p => p > 0)
+  if (prices.length !== edit.skus.length || multiPrices.length !== edit.skus.length) {
+    return ElMessage.warning('所有 SKU 必须填写单买价和拼单价')
+  }
+  const maxSinglePrice = Math.max(...prices)
+  if (edit.marketPrice <= maxSinglePrice) {
+    return ElMessage.warning(`参考价必须高于所有 SKU 中的最大单买价（当前最高 ¥${maxSinglePrice.toFixed(2)}）`)
+  }
+  for (const sku of edit.skus) {
+    if (sku.price - sku.multiPrice < 1) {
+      return ElMessage.warning(`SKU「${sku.specInfo || '默认'}」单买价至少比拼单价高 1 元`)
+    }
+  }
+
   saving.value = true
   try {
     const info = editInfo.value

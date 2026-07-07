@@ -158,6 +158,27 @@ function forShop(shopId) {
     cpsUnitChange:     (units) => c('pdd.goods.cps.unit.change', { units }),
     cpsUnitDelete:     (goodsId) => c('pdd.goods.cps.unit.delete', { goods_id: goodsId }),
 
+    // ─── 商品素材 / 视频 / 图片空间 ─────────────────────────────────────────────
+    uploadVideo:          (data) => c('pdd.goods.video.upload', data),
+    getFileInfo:          (data) => c('pdd.goods.file.info.get', data),
+    uploadFilespaceImage: (base64) => c('pdd.goods.filespace.image.upload', { image: base64 }),
+    createMaterial:       (data) => c('pdd.goods.material.create', data),
+    deleteMaterial:       (data) => c('pdd.goods.material.delete', data),
+    queryMaterial:        (data) => c('pdd.goods.material.query', data),
+
+    // ─── 库存 / 价格单独更新 ────────────────────────────────────────────────────
+    updateQuantity:       (data) => c('pdd.goods.quantity.update', data),
+    updateSkuPrice:       (data) => c('pdd.goods.sku.price.update', data),
+
+    // ─── 草稿 / 审核状态查询 ────────────────────────────────────────────────────
+    getCommitDetail:      (data) => c('pdd.goods.commit.detail.get', data),
+    getCommitList:        (data) => c('pdd.goods.commit.list.get', data),
+    getCommitStatus:      (data) => c('pdd.goods.commit.status.get', data),
+    getLatestCommitStatus:(data) => c('pdd.goods.latest.commit.status.get', data),
+
+    // ─── 属性映射 ───────────────────────────────────────────────────────────────
+    getOutPropertyMapping:(data) => c('pdd.goods.out.property.mapping.get', data),
+
     // ─── 旧推广中心（已下线，保留兼容）──────────────────────────────────────────
     adUnitList:        (p = {}) => c('pdd.ad.api.unit.query', { page: 1, page_size: 50, ...p }),
     adPlanList:        (p = {}) => c('pdd.ad.api.plan.query', { page: 1, page_size: 50, ...p }),
