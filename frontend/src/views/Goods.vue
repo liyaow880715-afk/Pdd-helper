@@ -698,9 +698,8 @@ function initProperties() {
 }
 
 // ─── AI 优化标题 ─────────────────────────────────────────────────────────────
-async function handleOptimizeTitle(formRef, catName) {
+async function handleOptimizeTitle(form, catName) {
   if (!shopStore.currentId) return ElMessage.warning('请先选择店铺')
-  const form = formRef.value
   if (!form) return ElMessage.warning('表单未初始化')
   const title = form.goodsName?.trim()
   if (!title) return ElMessage.warning('请先输入商品标题')
