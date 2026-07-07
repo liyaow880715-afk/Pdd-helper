@@ -335,6 +335,23 @@
             <el-option v-for="s in shipmentLimitOptions" :key="s.value" :label="s.label" :value="s.value" />
           </el-select>
         </el-form-item>
+        <el-form-item label="预售设置">
+          <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+            <el-switch
+              v-model="serviceConfig.isPreSale"
+              active-text="预售商品"
+              inactive-text="非预售"
+            />
+            <el-date-picker
+              v-if="serviceConfig.isPreSale"
+              v-model="serviceConfig.preSaleTime"
+              type="datetime"
+              placeholder="选择预售截止时间"
+              value-format="x"
+              style="width:220px"
+            />
+          </div>
+        </el-form-item>
         <el-form-item label="运费模板" required>
           <el-select v-model="publishForm.costTemplateId" placeholder="请选择运费模板" style="width:220px">
             <el-option
@@ -396,6 +413,29 @@
                 <el-input-number v-model="row.quantity" :min="0" :precision="0" size="small" style="width:90px" />
               </template>
             </el-table-column>
+            <el-table-column label="商家编码" width="130">
+              <template #default="{ row }">
+                <el-input v-model="row.outSkuSn" placeholder="编码" size="small" maxlength="100" show-word-limit style="width:120px" />
+              </template>
+            </el-table-column>
+            <el-table-column label="SKU图" width="90">
+              <template #default="{ row }">
+                <el-upload
+                  v-if="!row.thumbUrl"
+                  action="#"
+                  :auto-upload="true"
+                  :http-request="(opts) => handleSkuImageUpload(row, opts)"
+                  :show-file-list="false"
+                  accept="image/jpeg,image/png,image/jpg"
+                >
+                  <el-button type="primary" link size="small">上传</el-button>
+                </el-upload>
+                <div v-else style="position:relative;display:inline-block">
+                  <el-image :src="row.thumbUrl" fit="cover" style="width:48px;height:48px;border-radius:4px;border:1px solid #e4e7ed" />
+                  <el-icon class="img-close" @click="row.thumbUrl = ''"><Close /></el-icon>
+                </div>
+              </template>
+            </el-table-column>
             <el-table-column label="上架" width="70">
               <template #default="{ row }">
                 <el-checkbox v-model="row.isOnSale" />
@@ -442,11 +482,11 @@ const publishForm = ref({
   catPath: [],
   goodsName: '',
   goodsDesc: '',
-  carouselGallery: [''],
-  detailGallery: [''],
+  carouselGallery: [],
+  detailGallery: [],
   marketPrice: 0,
   costTemplateId: '',
-  skus: [{ specName: '默认', price: 0, multiPrice: 0, quantity: 0 }]
+  skus: [{ specName: '默认', price: 0, multiPrice: 0, quantity: 0, outSkuSn: '', thumbUrl: '', isOnSale: true }]
 })
 const catRule = ref(null)
 const propertyValues = ref({})
@@ -461,6 +501,8 @@ const serviceConfig = ref({
   badFruitClaim: false,
   lackOfWeightClaim: false,
   shipmentLimitSecond: 86400,
+  isPreSale: false,
+  preSaleTime: null,
 })
 
 // AI 标题优化 / SPU / 多维 SKU
@@ -560,7 +602,7 @@ async function openPublishDialog() {
     detailGallery: [],
     marketPrice: 0,
     costTemplateId: undefined,
-    skus: [{ specName: '默认', price: 0, multiPrice: 0, quantity: 0 }]
+    skus: [{ specName: '默认', price: 0, multiPrice: 0, quantity: 0, outSkuSn: '', thumbUrl: '', isOnSale: true }]
   }
   catRule.value = null
   propertyValues.value = {}
@@ -570,6 +612,17 @@ async function openPublishDialog() {
   spuList.value = []
   selectedSpuId.value = null
   logisticsTemplates.value = []
+  serviceConfig.value = {
+    goodsType: '1',
+    isRefundable: true,
+    isFolt: true,
+    secondHand: false,
+    badFruitClaim: false,
+    lackOfWeightClaim: false,
+    shipmentLimitSecond: 86400,
+    isPreSale: false,
+    preSaleTime: null,
+  }
   publishVisible.value = true
   if (shopStore.currentId) {
     try {
@@ -623,12 +676,40 @@ async function compressImage(file, maxWidth = 1200, quality = 0.85) {
   })
 }
 
+/** 图片尺寸与大小校验（轮播图/SKU图需等宽高，详情图宽≥480且高≤3倍宽，均≤1MB） */
+function validateImage(file, type = 'carousel') {
+  return new Promise((resolve, reject) => {
+    if (!file.type.startsWith('image/')) return reject(new Error('请选择图片文件'))
+    if (file.size > 1 * 1024 * 1024) return reject(new Error('图片大小不能超过 1MB'))
+    const img = new Image()
+    const url = URL.createObjectURL(file)
+    img.onload = () => {
+      URL.revokeObjectURL(url)
+      const { width, height } = img
+      if (width < 480 || height < 480) {
+        return reject(new Error('图片宽高需均大于等于 480px'))
+      }
+      if ((type === 'carousel' || type === 'sku') && width !== height) {
+        return reject(new Error('轮播图和 SKU 图需要等宽高'))
+      }
+      if (type === 'detail' && height > width * 3) {
+        return reject(new Error('详情图高度不能超过宽度的 3 倍'))
+      }
+      resolve({ width, height })
+    }
+    img.onerror = () => reject(new Error('图片读取失败'))
+    img.src = url
+  })
+}
+
 async function handleImageUpload(options, galleryKey) {
   if (!shopStore.currentId) {
     options.onError(new Error('请先选择店铺'))
     return ElMessage.warning('请先选择店铺')
   }
   try {
+    const type = galleryKey === 'carouselGallery' ? 'carousel' : 'detail'
+    await validateImage(options.file, type)
     const base64 = await compressImage(options.file)
     const res = await goodsApi.uploadImage(shopStore.currentId, base64)
     publishForm.value[galleryKey].push(res.url)
@@ -636,6 +717,23 @@ async function handleImageUpload(options, galleryKey) {
   } catch (err) {
     options.onError(err)
     ElMessage.error(err.message || '图片上传失败')
+  }
+}
+
+async function handleSkuImageUpload(row, options) {
+  if (!shopStore.currentId) {
+    options.onError(new Error('请先选择店铺'))
+    return ElMessage.warning('请先选择店铺')
+  }
+  try {
+    await validateImage(options.file, 'sku')
+    const base64 = await compressImage(options.file)
+    const res = await goodsApi.uploadImage(shopStore.currentId, base64)
+    row.thumbUrl = res.url
+    options.onSuccess({ url: res.url })
+  } catch (err) {
+    options.onError(err)
+    ElMessage.error(err.message || 'SKU 图片上传失败')
   }
 }
 
@@ -679,6 +777,8 @@ function initServiceConfig() {
     badFruitClaim: r.bad_claim_rule === 2,
     lackOfWeightClaim: r.lack_of_weight_claim_rule === 2,
     shipmentLimitSecond: (r.shipment_limit_second_list || [86400])[0],
+    isPreSale: false,
+    preSaleTime: null,
   }
 }
 
@@ -785,7 +885,7 @@ function onSpecValueChange() {
 function regenerateSkus() {
   const groups = skuSpecs.value.filter(g => g.specName && g.values.some(v => v.trim()))
   if (!groups.length) {
-    publishForm.value.skus = [{ specName: '默认', price: 0, multiPrice: 0, quantity: 0 }]
+    publishForm.value.skus = [{ specName: '默认', price: 0, multiPrice: 0, quantity: 0, outSkuSn: '', thumbUrl: '', isOnSale: true }]
     return
   }
 
@@ -818,6 +918,7 @@ function regenerateSkus() {
       multiPrice: 0,
       quantity: 0,
       isOnSale: true,
+      outSkuSn: '',
       thumbUrl: '',
     }
   })
@@ -916,6 +1017,23 @@ async function handlePublish() {
     if (sku.price - sku.multiPrice < 1) {
       return ElMessage.warning(`SKU「${skuRowLabel(sku)}」单买价至少比拼单价高 1 元`)
     }
+    if ((sku.outSkuSn || '').length > 100) {
+      return ElMessage.warning(`SKU「${skuRowLabel(sku)}」商家编码不能超过 100 字符`)
+    }
+    if (activeGroups.length > 0 && !sku.thumbUrl?.trim()) {
+      return ElMessage.warning(`SKU「${skuRowLabel(sku)}」需要上传 SKU 图`)
+    }
+  }
+
+  // 预售时间校验：预售时间 > 当前时间 + 发货时间 + 1 天
+  if (serviceConfig.value.isPreSale) {
+    if (!serviceConfig.value.preSaleTime) {
+      return ElMessage.warning('请选择预售截止时间')
+    }
+    const minTime = Date.now() + (serviceConfig.value.shipmentLimitSecond * 1000) + 86400000
+    if (serviceConfig.value.preSaleTime < minTime) {
+      return ElMessage.warning('预售截止时间必须大于当前时间 + 发货时间 + 1 天')
+    }
   }
 
   const requiredProps = visibleProperties.value.filter(p => p.required)
@@ -948,6 +1066,8 @@ async function handlePublish() {
       secondHand: serviceConfig.value.secondHand,
       badFruitClaim: serviceConfig.value.badFruitClaim,
       lackOfWeightClaim: serviceConfig.value.lackOfWeightClaim,
+      isPreSale: serviceConfig.value.isPreSale,
+      preSaleTime: serviceConfig.value.preSaleTime,
       goodsProperties: buildGoodsProperties()
     })
     ElMessage.success('商品发布成功')

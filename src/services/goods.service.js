@@ -238,6 +238,7 @@ async function publishGoods(shopId, payload) {
     shipmentLimitSecond = 86400,
     isRefundable = true, isFolt = true, goodsType = '1',
     secondHand = false, badFruitClaim = false, lackOfWeightClaim = false,
+    isPreSale = false, preSaleTime = null,
     goodsProperties = [], packageLabelGallery = []
   } = payload;
 
@@ -251,6 +252,12 @@ async function publishGoods(shopId, payload) {
   const serviceRule = (catRuleRes.cat_rule_get_response?.goods_service_rule?.goods_service_rule_map || {})[String(goodsType)] || {};
   const needPackageLabel = !!serviceRule.need_upload_package_label_required;
   const finalPackageLabelGallery = packageLabelGallery.length ? packageLabelGallery : (needPackageLabel ? carouselGallery : []);
+
+  const skuLabel = (sku) => {
+    if (sku.specName) return sku.specName;
+    if (sku.specs?.length) return sku.specs.map(s => s.spec_name || s.valueName).join(' / ');
+    return '默认';
+  };
 
   // SKU 价格校验
   const skuPrices = skus.map(s => +s.price).filter(p => p > 0);
@@ -271,16 +278,22 @@ async function publishGoods(shopId, payload) {
     if (price - multiPrice < 1) {
       throw new Error(`SKU「${skuLabel(sku)}」单买价至少比拼单价高 1 元`);
     }
+    if ((sku.outSkuSn || '').length > 100) {
+      throw new Error(`SKU「${skuLabel(sku)}」商家编码不能超过 100 字符`);
+    }
   }
   if (!skus.some(s => s.isOnSale !== false)) {
     throw new Error('至少需要一个 SKU 上架');
   }
 
-  const skuLabel = (sku) => {
-    if (sku.specName) return sku.specName;
-    if (sku.specs?.length) return sku.specs.map(s => s.valueName).join(' / ');
-    return '默认';
-  };
+  // 预售时间校验
+  if (isPreSale) {
+    if (!preSaleTime) throw new Error('预售截止时间必填');
+    const minTime = Date.now() + (shipmentLimitSecond * 1000) + 86400000;
+    if (+preSaleTime < minTime) {
+      throw new Error('预售截止时间必须大于当前时间 + 发货时间 + 1 天');
+    }
+  }
 
   // 获取类目标准规格维度
   const specsRes = await api.getSpecs(catId);
@@ -399,7 +412,8 @@ async function publishGoods(shopId, payload) {
     sku_list: skuList,
     cost_template_id: costTemplateId,
     shipment_limit_second: String(shipmentLimitSecond),
-    is_pre_sale: 0,
+    is_pre_sale: isPreSale ? 1 : 0,
+    pre_sale_time: isPreSale ? Math.floor(preSaleTime / 1000) : undefined,
     buy_limit: 999999,
     country_id: 1,
     is_onsale: 1,
