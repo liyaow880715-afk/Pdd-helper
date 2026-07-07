@@ -178,17 +178,32 @@ function incrementScriptHit(id) {
 
 // --- 搜索/检索（用于客服 AI） ---
 
-function searchProducts(shopId, keyword, limit = 5) {
+function buildKeywordWhere(keywords, fields) {
+  if (!keywords || !keywords.length) return { where: '1=0', params: [] };
+  const clauses = [];
+  const params = [];
+  for (const kw of keywords) {
+    if (!kw) continue;
+    const fieldClauses = fields.map(() => 'LIKE ?').join(' OR ');
+    clauses.push(`(${fieldClauses})`);
+    for (let i = 0; i < fields.length; i++) params.push(`%${kw}%`);
+  }
+  return { where: clauses.join(' OR '), params };
+}
+
+function searchProducts(shopId, keywords, limit = 5) {
+  const { where, params } = buildKeywordWhere(keywords, ['name', 'specs', 'selling_points']);
   const rows = db.prepare(
-    'SELECT * FROM kb_products WHERE shop_id=? AND status=? AND (name LIKE ? OR specs LIKE ? OR selling_points LIKE ?) ORDER BY updated_at DESC LIMIT ?'
-  ).all(shopId, 'active', `%${keyword}%`, `%${keyword}%`, `%${keyword}%`, limit);
+    `SELECT * FROM kb_products WHERE shop_id=? AND status=? AND (${where}) ORDER BY updated_at DESC LIMIT ?`
+  ).all(shopId, 'active', ...params, limit);
   return rows.map(parseProduct);
 }
 
-function searchScripts(shopId, keyword, limit = 5) {
+function searchScripts(shopId, keywords, limit = 5) {
+  const { where, params } = buildKeywordWhere(keywords, ['title', 'content', 'tags']);
   const rows = db.prepare(
-    'SELECT * FROM kb_scripts WHERE shop_id=? AND status=? AND (title LIKE ? OR content LIKE ? OR tags LIKE ?) ORDER BY hit_count DESC LIMIT ?'
-  ).all(shopId, 'active', `%${keyword}%`, `%${keyword}%`, `%${keyword}%`, limit);
+    `SELECT * FROM kb_scripts WHERE shop_id=? AND status=? AND (${where}) ORDER BY hit_count DESC, updated_at DESC LIMIT ?`
+  ).all(shopId, 'active', ...params, limit);
   return rows.map(parseScript);
 }
 
@@ -198,10 +213,9 @@ function searchScripts(shopId, keyword, limit = 5) {
  */
 function getKnowledgeContext(shopId, message) {
   const keywords = extractKeywords(message);
-  const mainKeyword = keywords[0] || message.slice(0, 20);
 
-  const products = searchProducts(shopId, mainKeyword, 3);
-  const scripts = searchScripts(shopId, mainKeyword, 3);
+  const products = searchProducts(shopId, keywords, 3);
+  const scripts = searchScripts(shopId, keywords, 3);
 
   let context = '';
 
@@ -235,11 +249,22 @@ function safeJson(str, fallback) {
 }
 
 function extractKeywords(message) {
-  // 简单提取：去除标点，按长度筛选关键词
+  if (!message) return [];
+  // 去除常见标点
   const cleaned = message.replace(/[，。！？、；：""''（）【】《》]/g, ' ');
-  const words = cleaned.split(/\s+/).filter(w => w.length >= 2);
-  // 去重并保留前 3 个
-  return [...new Set(words)].slice(0, 3);
+  const segments = cleaned.split(/\s+/).filter(Boolean);
+  const words = [];
+  for (const seg of segments) {
+    // 保留完整短词（适合中文短语和英文词组）
+    if (seg.length >= 2) words.push(seg);
+    // 对连续中文字符再拆 2-gram，提高命中能力
+    for (let i = 0; i < seg.length - 1; i++) {
+      const bigram = seg.slice(i, i + 2);
+      if (/^[\u4e00-\u9fa5]{2}$/.test(bigram)) words.push(bigram);
+    }
+  }
+  // 去重并保留前 10 个，优先保留原词顺序
+  return [...new Set(words)].slice(0, 10);
 }
 
 module.exports = {
