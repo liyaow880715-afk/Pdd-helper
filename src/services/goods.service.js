@@ -141,10 +141,11 @@ async function optimizeTitle(shopId, { title, keywords = '', catName = '', catRu
 - 关键词/卖点：${keywords || '未指定'}
 - 类目关键属性：${propSummary || '未指定'}
 要求：
-1. 控制在 30 个汉字（60 个字符）以内。
-2. 保留核心关键词，突出卖点。
-3. 符合拼多多搜索和合规规范，不要特殊符号、不要虚假宣传。
-4. 直接返回优化后的标题，不要解释、不要引号。`;
+1. 必须对原标题进行修改，生成一个与原标题不同、更吸引点击的新标题，禁止原样返回。
+2. 控制在 30 个汉字（60 个字符）以内。
+3. 保留核心关键词，突出卖点，可调整语序或补充属性词。
+4. 符合拼多多搜索和合规规范，不要特殊符号、不要虚假宣传。
+5. 直接返回优化后的标题，不要解释、不要引号。`;
 
   const optimized = await ai.callApi(model, [{ role: 'user', content: prompt }], 200, { timeout: 15000 });
   const clean = (optimized || '').replace(/["'"]/g, '').trim();

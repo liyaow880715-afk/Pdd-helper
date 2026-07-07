@@ -813,8 +813,14 @@ async function handleOptimizeTitle(form, catName) {
       catName: catName || '',
       catRule: catRule.value,
     })
-    target.goodsName = res.title
-    ElMessage.success('标题已优化')
+    const optimized = res.title?.trim()
+    if (!optimized) return ElMessage.warning('AI 未返回有效标题')
+    target.goodsName = optimized
+    if (optimized === title) {
+      ElMessage.info('AI 认为当前标题已较优，未做修改')
+    } else {
+      ElMessage.success('标题已优化')
+    }
   } catch (err) {
     ElMessage.error(err.message || '标题优化失败')
   } finally {
