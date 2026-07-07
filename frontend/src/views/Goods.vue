@@ -801,17 +801,19 @@ function initProperties() {
 async function handleOptimizeTitle(form, catName) {
   if (!shopStore.currentId) return ElMessage.warning('请先选择店铺')
   if (!form) return ElMessage.warning('表单未初始化')
-  const title = form.goodsName?.trim()
+  // 兼容模板传入 ref 或已解包对象
+  const target = form.value ? form.value : form
+  const title = target.goodsName?.trim()
   if (!title) return ElMessage.warning('请先输入商品标题')
   optimizingTitle.value = true
   try {
     const res = await goodsApi.optimizeTitle(shopStore.currentId, {
       title,
-      keywords: form.goodsDesc?.trim() || '',
+      keywords: target.goodsDesc?.trim() || '',
       catName: catName || '',
       catRule: catRule.value,
     })
-    form.goodsName = res.title
+    target.goodsName = res.title
     ElMessage.success('标题已优化')
   } catch (err) {
     ElMessage.error(err.message || '标题优化失败')
