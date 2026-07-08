@@ -119,12 +119,34 @@ async function getSpecsList(shopId, catId) {
   return (res.goods_spec_get_response || {}).goods_spec_list || [];
 }
 
-/** AI 优化商品标题 */
+function weightedLength(str = '') {
+  let count = 0;
+  for (const ch of str) {
+    if (/[\u4e00-\u9fa5\uff00-\uffef]/.test(ch)) count += 2;
+    else count += 1;
+  }
+  return count;
+}
+
+function sliceByWeighted(str, max = 60) {
+  let count = 0;
+  let result = '';
+  for (const ch of str) {
+    const w = /[\u4e00-\u9fa5\uff00-\uffef]/.test(ch) ? 2 : 1;
+    if (count + w > max) break;
+    count += w;
+    result += ch;
+  }
+  return result;
+}
+
+/** AI 优化商品标题（主模型失败时回退到 kimi-k2.5） */
 async function optimizeTitle(shopId, { title, keywords = '', catName = '', catRule = null }) {
   if (!title || !title.trim()) throw new Error('原标题不能为空');
 
   const settings = ai.getAiSettings ? ai.getAiSettings() : {};
-  const model = settings.chatModel || config.ai.chatModel;
+  const primaryModel = settings.chatModel || config.ai.chatModel;
+  const fallbackModel = 'kimi-k2.5';
 
   // 从 catRule 提取关键属性作为参考
   let propSummary = '';
@@ -135,34 +157,34 @@ async function optimizeTitle(shopId, { title, keywords = '', catName = '', catRu
       .join('，');
   }
 
-  const prompt = `你是拼多多商品标题优化专家。请严格按以下公式重新组织并优化商品标题：
-[核心类目词] + [属性词] + [卖点词] + [场景/人群词] + [长尾词]
-输入信息：
-- 原标题：${title.trim()}
-- 类目：${catName || '未指定'}
-- 关键词/卖点：${keywords || '未指定'}
-- 类目关键属性：${propSummary || '未指定'}
-优化示例：
-- 原标题：夏季新款纯棉T恤
-- 优化后：夏季纯棉短袖T恤男宽松透气吸汗休闲上衣
-- 原标题：瑞士卷生椰拿铁味原味动物奶油
-- 优化后：生椰拿铁瑞士卷动物奶油厚切蛋糕卷早餐零食
-要求：
-1. 必须按公式重新组织原标题，生成一个与原标题不同、更吸引点击的新标题，禁止原样返回。
-2. 优先保留核心类目词和核心卖点词，可调整语序、替换同义词、补充属性或场景词。
-3. 删除冗余、重复、口语化词汇，使标题更紧凑。
-4. 控制在 30 个汉字（60 个字符）以内，中文按 2 个字符计算。
-5. 符合拼多多搜索和合规规范，不要特殊符号、不要虚假宣传。
-6. 直接返回优化后的标题，不要解释、不要引号。`;
+  const buildPrompt = () => {
+    const parts = [
+      `请将以下商品描述改写成一个更简洁、更利于搜索的商品名称（30个汉字以内），直接返回名称，不要解释。`,
+      `商品描述：${title.trim()}`,
+    ];
+    if (catName) parts.push(`类目：${catName}`);
+    // 避免把原标题同时作为卖点重复传入，容易触发模型内容过滤
+    if (keywords && keywords.trim() && keywords.trim() !== title.trim()) parts.push(`卖点：${keywords.trim()}`);
+    if (propSummary) parts.push(`属性参考：${propSummary}`);
+    return parts.join('\n');
+  };
 
-  const optimized = await ai.callApi(model, [
-    { role: 'system', content: '你是拼多多商品标题优化专家。必须严格按照用户给出的公式改写标题，返回的标题必须与原标题不同，禁止原样返回。' },
-    { role: 'user', content: prompt }
-  ], 200, { timeout: 15000, extraBody: { temperature: 0.8 } });
-  const clean = (optimized || '').replace(/["'"]/g, '').trim();
-  if (!clean) return title.trim();
-  if (clean.length > 60) return clean.slice(0, 60);
-  return clean;
+  async function tryRewrite(m) {
+    try {
+      const res = await ai.callApi(m, [{ role: 'user', content: buildPrompt() }], 200, { timeout: 15000 });
+      const clean = (res || '').replace(/["'"]/g, '').trim();
+      if (!clean) return null;
+      if (clean === title.trim()) return null;
+      return weightedLength(clean) > 60 ? sliceByWeighted(clean, 60) : clean;
+    } catch (err) {
+      logger.warn(`[AI标题优化] ${m} 失败: ${err.message}`);
+      return null;
+    }
+  }
+
+  let optimized = await tryRewrite(primaryModel);
+  if (!optimized) optimized = await tryRewrite(fallbackModel);
+  return optimized || title.trim();
 }
 
 /** 搜索拼多多标品 */
