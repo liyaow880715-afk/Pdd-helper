@@ -271,7 +271,8 @@ async function submitReauth() {
       clientId: reauthRow.value.client_id,
       clientSecret: defaultApp.value.hasSecret ? undefined : reauthForm.value.clientSecret,
       name: reauthRow.value.name,
-      redirectUri: reauthForm.value.redirectUri || undefined
+      redirectUri: reauthForm.value.redirectUri || undefined,
+      shopId: reauthRow.value.id
     })
     window.open(authUrl, '_blank')
     reauthDialogVisible.value = false

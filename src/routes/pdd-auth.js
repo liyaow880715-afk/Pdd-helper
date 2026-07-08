@@ -6,7 +6,7 @@ const config = require('../config');
 const db = require('../utils/db');
 const logger = require('../utils/logger');
 const { exchangeToken } = require('../api/pdd-client');
-const shopService = require('../services/shop.service');
+const shopService = require('../services/shop.service'); // getShop, getShopByMallId, getShopByClientId, addShop, updateShop
 const asyncHandler = require('../middleware/asyncHandler');
 
 const router = express.Router();
@@ -19,7 +19,7 @@ const router = express.Router();
  * 返回拼多多授权跳转 URL
  */
 router.get('/authorize', (req, res) => {
-  const { clientId, clientSecret, name } = req.query;
+  const { clientId, clientSecret, name, shopId } = req.query;
   const finalClientId = clientId || config.pdd.clientId;
   const finalClientSecret = clientSecret || config.pdd.clientSecret;
   if (!finalClientId || !finalClientSecret) {
@@ -31,9 +31,9 @@ router.get('/authorize', (req, res) => {
 
   // 临时存储 state 与店铺信息（有效期 10 分钟）
   db.prepare(`
-    INSERT INTO shop_auth_states (state, name, client_id, client_secret, redirect_uri)
-    VALUES (?, ?, ?, ?, ?)
-  `).run(state, name, finalClientId, finalClientSecret, redirectUri);
+    INSERT INTO shop_auth_states (state, shop_id, name, client_id, client_secret, redirect_uri)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).run(state, shopId ? +shopId : null, name, finalClientId, finalClientSecret, redirectUri);
 
   const url = new URL(config.pdd.authUrl);
   url.searchParams.set('response_type', 'code');
@@ -101,8 +101,17 @@ router.get('/callback', asyncHandler(async (req, res) => {
   // 优先使用用户传入的名称，否则用拼多多返回的 owner_name / mall_name
   const shopName = authState.name || result.owner_name || result.mall_name || `店铺_${result.owner_id || mallId || '未知'}`;
 
-  // 如果同一 client_id 已存在，则更新 token 并重新启用，避免重复创建
-  const existing = shopService.getShopByClientId(authState.client_id);
+  // 优先按发起授权时指定的 shop_id 更新；否则按 mall_id / client_id 查找，避免重复创建
+  let existing = null;
+  if (authState.shop_id) {
+    existing = shopService.getShop(authState.shop_id);
+  }
+  if (!existing && mallId) {
+    existing = shopService.getShopByMallId(mallId);
+  }
+  if (!existing) {
+    existing = shopService.getShopByClientId(authState.client_id);
+  }
   let shopId;
   if (existing) {
     shopService.updateShop(existing.id, {

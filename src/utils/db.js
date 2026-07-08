@@ -68,6 +68,7 @@ function initDb() {
     -- 店铺授权状态记录（用于OAuth回调后临时存储state）
     CREATE TABLE IF NOT EXISTS shop_auth_states (
       state      TEXT PRIMARY KEY,
+      shop_id    INTEGER,
       name       TEXT NOT NULL,
       client_id  TEXT NOT NULL,
       client_secret TEXT NOT NULL,
@@ -141,6 +142,11 @@ function initDb() {
   `);
 
   // 迁移：旧表若无 shop_id 列则补加（兼容已有数据）
+  const authStateCols = db.prepare('PRAGMA table_info(shop_auth_states)').all().map(c => c.name);
+  if (!authStateCols.includes('shop_id')) {
+    db.exec('ALTER TABLE shop_auth_states ADD COLUMN shop_id INTEGER');
+  }
+
   const tables = ['goods', 'orders', 'customer_messages'];
   for (const t of tables) {
     const cols = db.prepare(`PRAGMA table_info(${t})`).all().map(c => c.name);

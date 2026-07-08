@@ -118,4 +118,8 @@ function getShopByClientId(clientId) {
   return db.prepare('SELECT * FROM shops WHERE client_id=?').get(clientId);
 }
 
-module.exports = { listShops, getShop, getShopByClientId, addShop, updateShop, disableShop, enableShop, verifyShop, getShopsNeedRefresh, refreshShopToken };
+function getShopByMallId(mallId) {
+  return db.prepare('SELECT * FROM shops WHERE mall_id=?').get(mallId);
+}
+
+module.exports = { listShops, getShop, getShopByClientId, getShopByMallId, addShop, updateShop, disableShop, enableShop, verifyShop, getShopsNeedRefresh, refreshShopToken };
